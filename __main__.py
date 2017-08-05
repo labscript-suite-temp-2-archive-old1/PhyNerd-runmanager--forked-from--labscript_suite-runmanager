@@ -529,16 +529,16 @@ class ArrowFilter(QtCore.QObject):
                     elif key == QtCore.Qt.Key_Down:
                         new_value -= 1 * self.stepsize  # reduce value
 
-                # Convert the new value to string strip of all tailing zeros but one
+                # Convert the new value to string strip of all tailing zeros
                 new_text = "{:f}".format(new_value).rstrip('0')
-                # determin current stepsize digit
+                # determine current stepsize digit
                 digit = int(np.floor(np.log10(self.stepsize)))
 
-                dicimalpoint = new_text.index('.')
+                decimalpoint = new_text.index('.')
                 if digit < 0:
-                    select_pos = dicimalpoint - digit
+                    select_pos = decimalpoint - digit
                 else:
-                    select_pos = dicimalpoint - digit - 1
+                    select_pos = decimalpoint - digit - 1
 
                 # Append additional zeros for the display of current stepsize digit
                 if select_pos + 1 > len(new_text):
@@ -555,7 +555,7 @@ class ArrowFilter(QtCore.QObject):
 
                 return True
             # handle enter (edit finished)
-            if key in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return):
+            if key in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
                 # try float conversion only handle Event if this succeeds
                 try:
                     new_value = float(str(obj.text()))
