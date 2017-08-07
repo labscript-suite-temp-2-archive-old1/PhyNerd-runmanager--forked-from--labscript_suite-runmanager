@@ -25,7 +25,9 @@ import Queue
 import socket
 import ast
 import pprint
-import numpy as np
+PY2 = sys.version_info[0] == 2
+if not PY2:
+    long = int
 
 # Evaluation of globals happens in a thread with the pylab module imported.
 # Although we don't care about plotting, importing pylab makes Qt calls. We
@@ -500,72 +502,173 @@ class AlternatingColorModel(QtGui.QStandardItemModel):
         return QtGui.QStandardItemModel.data(self, index, role)
 
 
+def is_decimal_int(s):
+    try:
+        value = ast.literal_eval(s)
+    except SyntaxError:
+        return False
+
+    if type(ast.literal_eval(s)) in [int, long]:
+        if PY2:
+            # int literals starting with zero in PY2 are octal:
+            if s.startswith('0'):
+                return False
+        try:
+            int(s)
+        except ValueError:
+            # Not base 10
+            return False
+        return True
+
+def is_float(s):
+    try:
+        value = ast.literal_eval(s)
+    except SyntaxError:
+        return False
+    return type(value) == float
+
 class ArrowFilter(QtCore.QObject):
     """
     A Event filter for the TableView editors, that allows quick changing of number values
     """
+    def __init__(self, *args, **kwargs):
+        self.added_zeros_l = 0
+        self.added_zeros_r = 0
+        QtCore.QObject.__init__(self, *args, **kwargs)
+
+
     def eventFilter(self, obj, event):
         if event.type() == event.KeyPress and obj == self.parent():
             key = event.key()
+            old_text = str(obj.text())
             # handle arrow keys
-            if key in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down, QtCore.Qt.Key_Right, QtCore.Qt.Key_Left):
-                # try float conversion only handle Event if this succeeds
+            if key in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
+                # remove any added leading zeros
+                check_text = old_text
+                if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
+                    check_text = old_text[self.added_zeros_l:]
+                # handle Event only if the text is numeric
+                if is_float(check_text):
+                    new_value = float(check_text)
+                    event.accept()
+                elif is_decimal_int(check_text):
+                    new_value = int(check_text)
+                    event.accept()
+                else:
+                    return False
+
+                # determin digit to edit
+                if '.' in old_text:
+                    decimalpoint = old_text.index('.')
+                else:
+                    decimalpoint = len(old_text)
+
+                digit = decimalpoint - obj.cursorPosition()
+                if digit == -1:
+                    # cusor is just right of decimal point -> nothing to do here
+                    return False
+                elif digit < -1:
+                    # cusor is right of decimal point ->  need to adjust digit by 1
+                    digit += 1
+
+                # caluclate new value
+                stepsize = 10**(digit)
+                if key == QtCore.Qt.Key_Up:
+                    new_value += stepsize  # increase value
+                elif key == QtCore.Qt.Key_Down:
+                    new_value -= stepsize  # reduce value
+
+                # Convert the new value to string
+                new_text = "{}".format(new_value)
+
+                # determin new decimal point position
+                if '.' in new_text:
+                    new_decimalpoint = new_text.index('.')
+                else:
+                    new_decimalpoint = len(new_text)
+
+                # Strip the new string of tailing zeros beyond the curser position or decimalpoint
+                if digit < 0:
+                    strip_pos = obj.cursorPosition()
+                else:
+                    strip_pos = new_decimalpoint + 2
+
+                if strip_pos > new_decimalpoint:
+                    new_text =  new_text[:strip_pos] + new_text[strip_pos:].rstrip('0')
+
+                # update Text
+                obj.setText(new_text)
+
+                # reset cursor to old position
+                if digit < 0:
+                    # need to move past the decimal point -> +1
+                    obj.setCursorPosition(new_decimalpoint - digit + 1)
+                else:
+                    obj.setCursorPosition(new_decimalpoint - digit)
+
+                # Added zeros would have been removed by now
+                self.added_zeros_l = 0
+                self.added_zeros_r = 0
+
+                return True
+
+            # add Zeros if needed
+            elif key in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right):
+                old_text = str(obj.text())
                 try:
-                    new_value = float(str(obj.text()))
+                    new_value = float(old_text)
                 except ValueError:
                     return False
                 else:
                     event.accept()
 
-                if not hasattr(self, 'stepsize'):
-                    self.stepsize = 1.0  # initialize stepsize
-                if key == QtCore.Qt.Key_Left:
-                    self.stepsize *= 10.0  # increase stepsize by factor 10
-                elif key == QtCore.Qt.Key_Right:
-                    self.stepsize /= 10.0  # reduce stepsize by factor 10
-                else:
-                    if key == QtCore.Qt.Key_Up:
-                        new_value += 1 * self.stepsize  # increase value
-                    elif key == QtCore.Qt.Key_Down:
-                        new_value -= 1 * self.stepsize  # reduce value
+                # Appending left Zeros
+                if obj.cursorPosition() in (0,1) and key == QtCore.Qt.Key_Left:
+                    obj.setText('0' + old_text)
+                    obj.setCursorPosition(1)
+                    self.added_zeros_l += 1
+                    return True
+                # Removing left Zeros
+                elif obj.cursorPosition() == 1 and key == QtCore.Qt.Key_Right:
+                    if old_text[0] == '0':
+                        obj.setText(old_text[1:])
+                        obj.setCursorPosition(1)
+                        self.added_zeros_l -= 1
+                        return True
+                # Appending right Zeros
+                elif obj.cursorPosition() == len(old_text) and key == QtCore.Qt.Key_Right:
+                    if '.' in old_text:
+                        obj.setText(old_text + '0')
+                    else:
+                        obj.setText(old_text + '.0')
+                    obj.setCursorPosition(len(old_text)+1)
+                    self.added_zeros_r += 1
+                    return True
+                # Removing right Zeros
+                elif obj.cursorPosition() == len(obj.text()) and key == QtCore.Qt.Key_Left and '.' in old_text:
+                    if old_text[-1] == '0' and old_text[-2:-1] != '.':
+                        obj.setText(old_text[:-1])
+                        obj.setCursorPosition(len(old_text)-1)
+                        self.added_zeros_r -= 1
+                        return True
 
-                # Convert the new value to string strip of all tailing zeros
-                new_text = "{:f}".format(new_value).rstrip('0')
-                # determine current stepsize digit
-                digit = int(np.floor(np.log10(self.stepsize)))
-
-                decimalpoint = new_text.index('.')
-                if digit < 0:
-                    select_pos = decimalpoint - digit
-                else:
-                    select_pos = decimalpoint - digit - 1
-
-                # Append additional zeros for the display of current stepsize digit
-                if select_pos + 1 > len(new_text):
-                    diff = np.abs(select_pos + 1 - len(new_text))
-                    new_text = "{}{}".format(new_text, "0" * diff)
-                elif select_pos <= 0:
-                    diff = np.abs(select_pos)
-                    new_text = "{}{}".format("0" * diff, new_text)
-                    select_pos = 0
-
-                # update Value and select current stepsize digit
-                obj.setText(new_text.rstrip('.'))
-                obj.setSelection(select_pos, 1)
-
-                return True
-            # handle enter (edit finished)
-            if key in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
-                # try float conversion only handle Event if this succeeds
+                return False
+            # handle edit finished removing any added zeros
+            elif key in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
                 try:
                     new_value = float(str(obj.text()))
                 except ValueError:
                     return False
                 else:
-                    # convert to int if possible
-                    if new_value.is_integer():
-                        new_value = int(new_value)
-                    obj.setText(str(new_value))
+                    new_text = str(obj.text())
+                    if self.added_zeros_r > 0:
+                        new_text =  new_text[:-self.added_zeros_r] + new_text[-self.added_zeros_r:].rstrip('0')
+                    if self.added_zeros_l > 0:
+                        new_text =  new_text[:self.added_zeros_l].lstrip('0') + new_text[self.added_zeros_l:]
+
+                    obj.setText(new_text)
+                    return False
+
         return False
 
 
