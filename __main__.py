@@ -505,7 +505,7 @@ class AlternatingColorModel(QtGui.QStandardItemModel):
 def is_decimal_int(s):
     try:
         value = ast.literal_eval(s)
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return False
 
     if type(ast.literal_eval(s)) in [int, long]:
@@ -523,7 +523,7 @@ def is_decimal_int(s):
 def is_float(s):
     try:
         value = ast.literal_eval(s)
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return False
     return type(value) == float
 
@@ -541,21 +541,24 @@ class ArrowFilter(QtCore.QObject):
         if event.type() == event.KeyPress and obj == self.parent():
             key = event.key()
             old_text = str(obj.text())
+
+            # remove any added leading zeros
+            check_text = old_text
+            if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
+                check_text = old_text[self.added_zeros_l:]
+            # handle Event only if the text is numeric
+            if is_float(check_text) or is_decimal_int(check_text):
+                event.accept()
+            else:
+                return False
+
             # handle arrow keys
             if key in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
-                # remove any added leading zeros
-                check_text = old_text
-                if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
-                    check_text = old_text[self.added_zeros_l:]
-                # handle Event only if the text is numeric
+                # convert text to int or float
                 if is_float(check_text):
                     new_value = float(check_text)
-                    event.accept()
                 elif is_decimal_int(check_text):
                     new_value = int(check_text)
-                    event.accept()
-                else:
-                    return False
 
                 # determin digit to edit
                 if '.' in old_text:
@@ -621,16 +624,6 @@ class ArrowFilter(QtCore.QObject):
 
             # add Zeros if needed
             elif key in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right):
-                # remove any added leading zeros
-                check_text = old_text
-                if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
-                    check_text = old_text[self.added_zeros_l:]
-                # handle Event only if the text is numeric
-                if is_float(check_text) or is_decimal_int(check_text):
-                    event.accept()
-                else:
-                    return False
-
                 # Appending left Zeros
                 if obj.cursorPosition() in (0,1) and key == QtCore.Qt.Key_Left:
                     obj.setText('0' + old_text)
@@ -645,12 +638,13 @@ class ArrowFilter(QtCore.QObject):
                         self.added_zeros_l -= 1
                         return True
                 # Appending right Zeros
-                elif obj.cursorPosition() == len(old_text) and key == QtCore.Qt.Key_Right:
+                if obj.cursorPosition() == len(old_text) and key == QtCore.Qt.Key_Right:
                     if '.' in old_text:
                         obj.setText(old_text + '0')
+                        obj.setCursorPosition(len(old_text)+1)
                     else:
                         obj.setText(old_text + '.0')
-                    obj.setCursorPosition(len(old_text)+1)
+                        obj.setCursorPosition(len(old_text)+2)
                     self.added_zeros_r += 1
                     return True
                 # Removing right Zeros
@@ -663,16 +657,6 @@ class ArrowFilter(QtCore.QObject):
 
             # handle edit finished removing any added zeros
             elif key in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
-                # remove any added leading zeros
-                check_text = old_text
-                if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
-                    check_text = old_text[self.added_zeros_l:]
-                # handle Event only if the text is numeric
-                if is_float(check_text) or is_decimal_int(check_text):
-                    event.accept()
-                else:
-                    return False
-
                 new_text = old_text
                 if self.added_zeros_r > 0:
                     new_text =  new_text[:-self.added_zeros_r] + new_text[-self.added_zeros_r:].rstrip('0')
