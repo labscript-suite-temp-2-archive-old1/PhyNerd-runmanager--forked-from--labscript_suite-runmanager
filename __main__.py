@@ -596,6 +596,17 @@ class ArrowFilter(QtCore.QObject):
                 if strip_pos > new_decimalpoint:
                     new_text =  new_text[:strip_pos] + new_text[strip_pos:].rstrip('0')
 
+                # Added zeros would have been removed by now
+                self.added_zeros_l = 0
+                self.added_zeros_r = 0
+
+                # add any leading zeros removed by int/float string conversion
+                diff = digit - new_decimalpoint + 1
+                if diff > 0:
+                    new_text = '0' * diff + new_text
+                    self.added_zeros_l = diff
+                    new_decimalpoint += diff
+
                 # update Text
                 obj.setText(new_text)
 
@@ -606,21 +617,19 @@ class ArrowFilter(QtCore.QObject):
                 else:
                     obj.setCursorPosition(new_decimalpoint - digit)
 
-                # Added zeros would have been removed by now
-                self.added_zeros_l = 0
-                self.added_zeros_r = 0
-
                 return True
 
             # add Zeros if needed
             elif key in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right):
-                old_text = str(obj.text())
-                try:
-                    new_value = float(old_text)
-                except ValueError:
-                    return False
-                else:
+                # remove any added leading zeros
+                check_text = old_text
+                if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
+                    check_text = old_text[self.added_zeros_l:]
+                # handle Event only if the text is numeric
+                if is_float(check_text) or is_decimal_int(check_text):
                     event.accept()
+                else:
+                    return False
 
                 # Appending left Zeros
                 if obj.cursorPosition() in (0,1) and key == QtCore.Qt.Key_Left:
@@ -630,7 +639,7 @@ class ArrowFilter(QtCore.QObject):
                     return True
                 # Removing left Zeros
                 elif obj.cursorPosition() == 1 and key == QtCore.Qt.Key_Right:
-                    if old_text[0] == '0':
+                    if old_text[0] == '0' and self.added_zeros_l > 0:
                         obj.setText(old_text[1:])
                         obj.setCursorPosition(1)
                         self.added_zeros_l -= 1
@@ -646,28 +655,31 @@ class ArrowFilter(QtCore.QObject):
                     return True
                 # Removing right Zeros
                 elif obj.cursorPosition() == len(obj.text()) and key == QtCore.Qt.Key_Left and '.' in old_text:
-                    if old_text[-1] == '0' and old_text[-2:-1] != '.':
+                    if old_text[-1] == '0' and old_text[-2:-1] != '.' and self.added_zeros_r > 0:
                         obj.setText(old_text[:-1])
                         obj.setCursorPosition(len(old_text)-1)
                         self.added_zeros_r -= 1
                         return True
 
-                return False
             # handle edit finished removing any added zeros
             elif key in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
-                try:
-                    new_value = float(str(obj.text()))
-                except ValueError:
-                    return False
+                # remove any added leading zeros
+                check_text = old_text
+                if all([ c == '0' for c in old_text[:self.added_zeros_l]]):
+                    check_text = old_text[self.added_zeros_l:]
+                # handle Event only if the text is numeric
+                if is_float(check_text) or is_decimal_int(check_text):
+                    event.accept()
                 else:
-                    new_text = str(obj.text())
-                    if self.added_zeros_r > 0:
-                        new_text =  new_text[:-self.added_zeros_r] + new_text[-self.added_zeros_r:].rstrip('0')
-                    if self.added_zeros_l > 0:
-                        new_text =  new_text[:self.added_zeros_l].lstrip('0') + new_text[self.added_zeros_l:]
-
-                    obj.setText(new_text)
                     return False
+
+                new_text = old_text
+                if self.added_zeros_r > 0:
+                    new_text =  new_text[:-self.added_zeros_r] + new_text[-self.added_zeros_r:].rstrip('0')
+                if self.added_zeros_l > 0:
+                    new_text =  new_text[:self.added_zeros_l].lstrip('0') + new_text[self.added_zeros_l:]
+
+                obj.setText(new_text)
 
         return False
 
