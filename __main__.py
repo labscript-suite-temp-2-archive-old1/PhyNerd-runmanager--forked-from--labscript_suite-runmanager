@@ -552,14 +552,14 @@ class ArrowFilter(QtCore.QObject):
             else:
                 return False
 
+            # convert text to int or float
+            if is_float(check_text):
+                new_value = float(check_text)
+            elif is_decimal_int(check_text):
+                new_value = int(check_text)
+
             # handle arrow keys
             if key in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
-                # convert text to int or float
-                if is_float(check_text):
-                    new_value = float(check_text)
-                elif is_decimal_int(check_text):
-                    new_value = int(check_text)
-
                 # determin digit to edit
                 if '.' in old_text:
                     decimalpoint = old_text.index('.')
@@ -582,7 +582,10 @@ class ArrowFilter(QtCore.QObject):
                     new_value -= stepsize  # reduce value
 
                 # Convert the new value to string
-                new_text = "{}".format(new_value)
+                if isinstance(new_value, float):
+                    new_text = "{0:f}".format(new_value) # supress scientific notation
+                else:
+                    new_text = "{}".format(new_value)
 
                 # determin new decimal point position
                 if '.' in new_text:
@@ -606,7 +609,10 @@ class ArrowFilter(QtCore.QObject):
                 # add any leading zeros removed by int/float string conversion
                 diff = digit - new_decimalpoint + 1
                 if diff > 0:
-                    new_text = '0' * diff + new_text
+                    if new_value >= 0:
+                        new_text = '0' * diff + new_text
+                    else:
+                        new_text = '-' + '0' * diff + new_text[1:]
                     self.added_zeros_l = diff
                     new_decimalpoint += diff
 
@@ -624,17 +630,25 @@ class ArrowFilter(QtCore.QObject):
 
             # add Zeros if needed
             elif key in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right):
+                # account for '-' prefixing negative numbers
+                insertion_position = 1 if new_value >= 0 else 2
                 # Appending left Zeros
-                if obj.cursorPosition() in (0,1) and key == QtCore.Qt.Key_Left:
-                    obj.setText('0' + old_text)
-                    obj.setCursorPosition(1)
+                if obj.cursorPosition() in range(insertion_position+1) and key == QtCore.Qt.Key_Left:
+                    if new_value >= 0:
+                        obj.setText('0' + old_text)
+                    else:
+                         obj.setText('-' + '0' + old_text[1:])
+                    obj.setCursorPosition(insertion_position)
                     self.added_zeros_l += 1
                     return True
                 # Removing left Zeros
-                elif obj.cursorPosition() == 1 and key == QtCore.Qt.Key_Right:
-                    if old_text[0] == '0' and self.added_zeros_l > 0:
-                        obj.setText(old_text[1:])
-                        obj.setCursorPosition(1)
+                elif obj.cursorPosition() == insertion_position and key == QtCore.Qt.Key_Right:
+                    if old_text[insertion_position-1] == '0' and self.added_zeros_l > 0:
+                        if new_value >= 0:
+                            obj.setText(old_text[insertion_position:])
+                        else:
+                            obj.setText('-' + old_text[insertion_position:])
+                        obj.setCursorPosition(insertion_position)
                         self.added_zeros_l -= 1
                         return True
                 # Appending right Zeros
