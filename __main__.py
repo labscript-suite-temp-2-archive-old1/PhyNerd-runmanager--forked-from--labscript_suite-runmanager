@@ -1706,7 +1706,8 @@ class RunManager(object):
                 labscript_file, run_files = self.make_h5_files(
                     labscript_file, output_folder, sequenceglobals, shots, shuffle)
                 self.ui.pushButton_abort.setEnabled(True)
-                self.compile_queue.put([labscript_file, run_files, send_to_BLACS, BLACS_host, send_to_runviewer])
+                self.compile_queue.put([labscript_file, run_files, send_to_BLACS, BLACS_host, send_to_runviewer, len(shots)])
+                self.update_progress(current_progress=False, add_max=1)
             elif submit_to_mise:
                 if not mise_host:
                     raise Exception('Error: No mise host entered')
@@ -2830,10 +2831,30 @@ class RunManager(object):
         self.ui.actionSave_configuration_as.setEnabled(True)
         self.ui.actionRevert_configuration.setEnabled(True)
 
+    def update_progress(self, current_progress=True, add=0, set_max=0, add_max=0):
+        if current_progress:
+            progressbar = self.ui.current_progressBar
+        else:
+            progressbar = self.ui.total_progressBar
+        if add > 0:
+            new_value = progressbar.value() + add
+            progressbar.setValue(new_value)
+        if set_max > 0:
+            progressbar.setMaximum(set_max)
+        if add_max > 0:
+            new_max = progressbar.maximum() + add_max
+            progressbar.setMaximum(new_max)
+
+    def clear_progress(self):
+        self.ui.current_progressBar.setMaximum(0)
+        self.ui.total_progressBar.setMaximum(0)
+        self.ui.current_progressBar.setValue(0)
+        self.ui.total_progressBar.setValue(0)
+
     def compile_loop(self):
         while True:
             try:
-                labscript_file, run_files, send_to_BLACS, BLACS_host, send_to_runviewer = self.compile_queue.get()
+                labscript_file, run_files, send_to_BLACS, BLACS_host, send_to_runviewer, n_shots = self.compile_queue.get()
                 run_files = iter(run_files)  # Should already be in iterator but just in case
                 while True:
                     if self.compilation_aborted.is_set():
@@ -2859,10 +2880,14 @@ class RunManager(object):
                                 self.send_to_BLACS(run_file, BLACS_host)
                             if send_to_runviewer:
                                 self.send_to_runviewer(run_file)
+                            inmain(self.update_progress, True, 1, n_shots)
                     except Exception as e:
                         self.output_box.output(str(e) + '\n', red=True)
                         self.compilation_aborted.set()
-                inmain(self.ui.pushButton_abort.setEnabled, False)
+                inmain(self.update_progress, False, 1)
+                if self.compile_queue.qsize() == 0:
+                    inmain(self.clear_progress)
+                    inmain(self.ui.pushButton_abort.setEnabled, False)
                 self.compilation_aborted.clear()
             except Exception:
                 # Raise it so whatever bug it is gets seen, but keep going so
