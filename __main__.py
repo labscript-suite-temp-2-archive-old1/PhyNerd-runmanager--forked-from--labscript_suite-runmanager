@@ -2845,16 +2845,18 @@ class RunManager(object):
             new_max = progressbar.maximum() + add_max
             progressbar.setMaximum(new_max)
 
-    def clear_progress(self):
+    def clear_progress(self, both=True):
         self.ui.current_progressBar.setMaximum(0)
-        self.ui.total_progressBar.setMaximum(0)
         self.ui.current_progressBar.setValue(0)
-        self.ui.total_progressBar.setValue(0)
+        if both:
+            self.ui.total_progressBar.setMaximum(0)
+            self.ui.total_progressBar.setValue(0)
 
     def compile_loop(self):
         while True:
             try:
                 labscript_file, run_files, send_to_BLACS, BLACS_host, send_to_runviewer, n_shots = self.compile_queue.get()
+                inmain(self.clear_progress, False)
                 run_files = iter(run_files)  # Should already be in iterator but just in case
                 while True:
                     if self.compilation_aborted.is_set():
