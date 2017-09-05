@@ -1676,9 +1676,14 @@ class RunManager(object):
             except Exception as e:
                 raise Exception('Error parsing globals:\n%s\nCompilation aborted.' % str(e))
             logger.info('Making h5 files')
-            labscript_file, run_files = self.make_h5_files(
+            labscript_file, run_files, output_folder = self.make_h5_files(
                 labscript_file, output_folder, sequenceglobals, shots, shuffle)
             self.ui.pushButton_abort.setEnabled(True)
+
+            cb = QtWidgets.QApplication.clipboard()
+            cb.clear(mode=cb.Clipboard)
+            cb.setText(output_folder, mode=cb.Clipboard)
+
             self.compile_queue.put([labscript_file, run_files, send_to_BLACS, BLACS_host, send_to_runviewer])
         except Exception as e:
             self.output_box.output('%s\n\n' % str(e), red=True)
@@ -3057,7 +3062,7 @@ class RunManager(object):
         sequence_id = runmanager.generate_sequence_id(labscript_file)
         run_files = runmanager.make_run_files(output_folder, sequence_globals, shots, sequence_id, shuffle)
         logger.debug(run_files)
-        return labscript_file, run_files
+        return labscript_file, run_files, output_folder
 
     def send_to_BLACS(self, run_file, BLACS_hostname):
         port = int(self.exp_config.get('ports', 'BLACS'))
