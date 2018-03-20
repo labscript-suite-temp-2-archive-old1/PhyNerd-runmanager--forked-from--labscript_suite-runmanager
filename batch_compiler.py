@@ -10,9 +10,15 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-
-import __builtin__
+from __future__ import division, unicode_literals, print_function, absolute_import
+from labscript_utils import PY2
+if PY2:
+    str = unicode
+    import __builtin__ as builtins
+else:
+    import builtins
 import keyword
+import os
 import sys
 import traceback
 
@@ -85,7 +91,7 @@ class BatchProcessorBase(object):
         # We need to backup the builtins as they are now, as well as have a
         # reference to the actual builtins dictionary (which will change as we
         # add globals and possibly other items to it)
-        _builtins_dict = __builtin__.__dict__
+        _builtins_dict = builtins.__dict__
         _existing_builtins_dict = _builtins_dict.copy()
         
         try:
@@ -93,7 +99,10 @@ class BatchProcessorBase(object):
             self.load_globals(run_file, _builtins_dict)
             
             self.module_init(labscript_file, run_file)
-            execfile(labscript_file,sandbox,sandbox)
+            with open(labscript_file) as f:
+                code = compile(f.read(), os.path.basename(labscript_file),
+                               'exec', dont_inherit=True)
+                exec(code, sandbox)
             return True
         except:
             traceback_lines = traceback.format_exception(*sys.exc_info())
